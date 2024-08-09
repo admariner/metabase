@@ -7,7 +7,7 @@ import Popover from "metabase/components/Popover";
 import CS from "metabase/css/core/index.css";
 import { Icon } from "metabase/ui";
 
-import AlertListPopoverContent from "../AlertListPopoverContent";
+import { AlertListPopoverContent } from "../AlertListPopoverContent";
 
 import { AlertIcon } from "./QuestionAlertWidget.styled";
 
@@ -82,4 +82,6 @@ export default class QuestionAlertWidget extends Component {
 }
 
 QuestionAlertWidget.shouldRender = ({ question, visualizationSettings }) =>
-  question.alertType(visualizationSettings) !== null && !question.isArchived();
+  question.alertType(visualizationSettings) !== null &&
+  !question.isArchived() &&
+  question.type() !== "model";

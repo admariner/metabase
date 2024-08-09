@@ -227,7 +227,7 @@
                                                  (fnil conj []) entity))
                                        {} @extraction))
             ;; +1 for the Trash collection
-            (is (= 111 (-> @entities (get "Collection") count))))
+            (is (= 110 (-> @entities (get "Collection") count))))
 
           (testing "storage"
             (storage/store! (seq @extraction) dump-dir)
@@ -237,7 +237,7 @@
 
             (testing "for Collections"
               ;; +1 for the Trash collection
-              (is (= 111 (count (for [f (file-set (io/file dump-dir))
+              (is (= 110 (count (for [f (file-set (io/file dump-dir))
                                       :when (and (= (first f) "collections")
                                                  (let [[a b] (take-last 2 f)]
                                                    (= b (str a ".yaml"))))]
@@ -744,7 +744,7 @@
         (ts/with-dbs [source-db dest-db]
           (ts/with-db source-db
             ;; preparation
-            (t2.with-temp/with-temp [Dashboard _ {:name "some dashboard"}]
+            (mt/with-temp [Dashboard _ {:name "some dashboard"}]
               (testing "export (v2-dump) command"
                 (is (cmd/v2-dump! dump-dir {})
                     "works"))
@@ -752,8 +752,9 @@
               (testing "import (v2-load) command"
                 (ts/with-db dest-db
                   (testing "doing ingestion"
-                    (is (cmd/v2-load! dump-dir {})
-                        "works"))))))))))
+                    (mt/with-temp [:model/User _ {}]
+                      (is (cmd/v2-load! dump-dir {})
+                          "works")))))))))))
 
   (testing "without :serialization feature enabled"
     (ts/with-random-dump-dir [dump-dir "serdesv2-"]
@@ -770,9 +771,10 @@
               (testing "import (v2-load) command"
                 (ts/with-db dest-db
                   (testing "doing ingestion"
-                    (is (thrown-with-msg? Exception #"Please upgrade"
-                                          (cmd/v2-load! dump-dir {}))
-                        "throws")))))))))))
+                    (mt/with-temp [:model/User _ {}]
+                      (is (thrown-with-msg? Exception #"Please upgrade"
+                                            (cmd/v2-load! dump-dir {}))
+                          "throws"))))))))))))
 
 (deftest pivot-export-test
   (testing "Pivot table export and load correctly"

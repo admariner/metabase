@@ -263,14 +263,15 @@ describeEE("scenarios > embedding > questions > downloads", () => {
       cy.get("@questionId").then(questionId => {
         visitQuestion(questionId);
 
-        openStaticEmbeddingModal({ activeTab: "appearance" });
+        openStaticEmbeddingModal({ activeTab: "lookAndFeel" });
 
         cy.log(
           "Embedding settings page should not show option to disable downloads",
         );
-        cy.findByLabelText("Playing with appearance options")
-          .should("not.contain", "Download data")
-          .and("not.contain", "Enable users to download data from this embed");
+        cy.findByLabelText("Customizing look and feel").should(
+          "not.contain",
+          "Download buttons",
+        );
 
         cy.log('Use API to "publish" this question and to enable its filter');
         cy.request("PUT", `/api/card/${questionId}`, {
@@ -306,7 +307,7 @@ describeEE("scenarios > embedding > questions > downloads", () => {
           "Trying to prevent downloads via query params doesn't have any effect",
         );
         cy.url().then(url => {
-          cy.visit(url + "&hide_download_button=true");
+          cy.visit(url + "&downloads=false");
         });
 
         cy.get("[data-testid=cell-data]").should("have.text", "Foo");
@@ -323,16 +324,16 @@ describeEE("scenarios > embedding > questions > downloads", () => {
         visitQuestion(questionId);
 
         openStaticEmbeddingModal({
-          activeTab: "appearance",
+          activeTab: "lookAndFeel",
           acceptTerms: false,
         });
 
         cy.log("Disable downloads");
-        cy.findByLabelText("Download data")
+        cy.findByLabelText("Download buttons")
           .as("allow-download-toggle")
           .should("be.checked");
 
-        cy.findByText("Enable users to download data from this embed").click();
+        cy.findByText("Download buttons").click();
         cy.get("@allow-download-toggle").should("not.be.checked");
 
         cy.log('Use API to "publish" this question and to enable its filter');
@@ -349,7 +350,7 @@ describeEE("scenarios > embedding > questions > downloads", () => {
         cy.get("[data-testid=cell-data]").should("have.text", "Foo");
 
         cy.location("search").should("eq", "?text=Foo");
-        cy.location("hash").should("match", /&hide_download_button=true$/);
+        cy.location("hash").should("match", /&downloads=false$/);
 
         cy.log("We don't even show the footer if it's empty");
         cy.findByRole("contentinfo").should("not.exist");

@@ -27,6 +27,9 @@ import {
   join,
   newButton,
   saveQuestion,
+  modal,
+  filter,
+  openNotebook,
 } from "e2e/support/helpers";
 
 const {
@@ -299,14 +302,12 @@ describe("issue 17710", () => {
 
     visualize();
 
-    cy.icon("notebook")
-      .click()
-      .then(() => {
-        cy.findByTestId("step-join-0-0").within(() => {
-          cy.findByText("ID");
-          cy.findByText("Product ID");
-        });
-      });
+    openNotebook();
+
+    cy.findByTestId("step-join-0-0").within(() => {
+      cy.findByText("ID");
+      cy.findByText("Product ID");
+    });
   });
 });
 
@@ -332,7 +333,7 @@ describe("issue 17767", () => {
   it("should be able to do subsequent joins on question with the aggregation that uses implicit joins (metabase#17767)", () => {
     cy.createQuestion(questionDetails, { visitQuestion: true });
 
-    cy.icon("notebook").click();
+    openNotebook();
 
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
     cy.findByText("Join data").click();
@@ -623,7 +624,7 @@ describe("issue 18818", () => {
       { visitQuestion: true },
     );
 
-    cy.icon("notebook").click();
+    openNotebook();
     cy.findAllByText("CC Rating");
   });
 });
@@ -659,7 +660,7 @@ describe("issue 20519", () => {
     cy.signInAsAdmin();
 
     cy.createQuestion(questionDetails, { visitQuestion: true });
-    cy.icon("notebook").click();
+    openNotebook();
   });
 
   // Tightly related issue: metabase#17767
@@ -907,7 +908,7 @@ describe("issue 27380", () => {
     // Checks the y-axis label
     echartsContainer().findByText("Count");
 
-    cy.icon("notebook").click();
+    openNotebook();
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
     cy.findByText("Pick a column to group by").should("not.exist");
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
@@ -1285,5 +1286,69 @@ describe("issue 42385", { tags: "@external" }, () => {
     });
 
     getNotebookStep("join").should("not.exist");
+  });
+});
+
+describe("issue 45300", () => {
+  beforeEach(() => {
+    restore();
+    cy.signInAsNormalUser();
+  });
+
+  it("joins using the foreign key only should not break the filter modal (metabase#45300)", () => {
+    visitQuestionAdhoc({
+      dataset_query: {
+        database: SAMPLE_DB_ID,
+        type: "query",
+        query: {
+          "source-table": REVIEWS_ID,
+          joins: [
+            {
+              fields: "all",
+              strategy: "left-join",
+              alias: "Orders - Product",
+              condition: [
+                "=",
+                ["field", REVIEWS.PRODUCT_ID, { "base-type": "type/Integer" }],
+                [
+                  "field",
+                  ORDERS.PRODUCT_ID,
+                  {
+                    "base-type": "type/Integer",
+                    "join-alias": "Orders - Product",
+                  },
+                ],
+              ],
+              "source-table": ORDERS_ID,
+            },
+          ],
+        },
+        parameters: [],
+      },
+    });
+
+    filter();
+
+    modal().within(() => {
+      // sidebar
+      cy.findByRole("tablist").within(() => {
+        cy.findAllByRole("tab", { name: "Product" }).eq(0).click();
+      });
+
+      // main panel
+      cy.findAllByTestId("filter-column-Category")
+        .should("have.length", 1)
+        .within(() => {
+          cy.findByText("Doohickey").click();
+        });
+
+      cy.button("Apply filters").click();
+      cy.wait("@dataset");
+    });
+
+    cy.findByTestId("filter-pill").should(
+      "have.text",
+      "Product → Category is Doohickey",
+    );
   });
 });

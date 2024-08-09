@@ -305,12 +305,12 @@
     (with-search-items-in-root-collection "test"
       ;; sometimes there is a "table" in these responses. might be do to garbage in CI
       (is (set/subset? #{"dashboard" "dataset" "segment" "collection" "database" "metric" "card"}
-                       (-> (mt/user-http-request :crowberto :get 200 "search?q=test")
+                       (-> (mt/user-http-request :crowberto :get 200 "search" :q "test")
                            :available_models
                            set)))))
   (testing "It returns nothing if there are no results"
     (with-search-items-in-root-collection "test"
-      (is (= [] (:available_models (mt/user-http-request :crowberto :get 200 "search?q=noresults")))))))
+      (is (= [] (:available_models (mt/user-http-request :crowberto :get 200 "search" :q "noresults")))))))
 
 (deftest query-model-set-test
   (let [search-term "query-model-set"]
@@ -818,7 +818,7 @@
     :archived            nil
     :model               "table"
     :database_id         true
-    :database_name       "test-data"
+    :database_name       "test-data (h2)"
     :pk_ref              nil
     :initial_sync_status "complete"}))
 
@@ -887,7 +887,7 @@
 (deftest all-users-no-perms-table-test
   (testing (str "If the All Users group doesn't have perms to view a Table, but the current User is in a group that "
                 "does have perms, they should still be able to see it (#12332)")
-    (mt/with-temp [Database                   {db-id :id} {:name "test-data"}
+    (mt/with-temp [Database                   {db-id :id} {:name "test-data (h2)"}
                    Table                      table {:name "RoundTable" :db_id db-id}
                    PermissionsGroup           {group-id :id} {}
                    PermissionsGroupMembership _ {:group_id group-id :user_id (mt/user->id :rasta)}]
@@ -1226,6 +1226,21 @@
       (testing "error if invalids last_edited_at string"
         (is (= "Failed to parse datetime value: today~"
                (mt/user-http-request :crowberto :get 400 "search" :q search-term :last_edited_at "today~" :creator_id (mt/user->id :rasta))))))))
+
+(deftest filter-by-ids-test
+  (let [ids #(->> % :data (map :id) set)]
+    (mt/with-temp [:model/Card {c1 :id} {:name "a"}
+                   :model/Card {c2 :id} {:name "b"}]
+      (testing "returns exactly the instances we need"
+        (is (= #{c1}
+               (ids (mt/user-http-request :crowberto :get 200 "search" :models "card" :ids c1))))
+        (is (= #{c1 c2}
+               (ids (mt/user-http-request :crowberto :get 200 "search" :models "card" :ids c1 :ids c2)))))
+      (testing "requires single model type to be supplied"
+        (is (= "Filtering by ids work only when you ask for a single model"
+               (mt/user-http-request :crowberto :get 400 "search" :models "card" :models "dashboard" :ids c1)))
+        (is (= "Filtering by ids work only when you ask for a single model"
+               (mt/user-http-request :crowberto :get 400 "search" :ids c1)))))))
 
 (deftest available-models-should-be-independent-of-models-param-test
   (testing "if a search request includes `models` params, the `available_models` from the response should not be restricted by it"

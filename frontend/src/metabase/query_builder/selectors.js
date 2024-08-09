@@ -17,7 +17,7 @@ import {
 import { getComputedSettingsForSeries } from "metabase/visualizations/lib/settings/visualization";
 
 import Databases from "metabase/entities/databases";
-import { ModelIndexes } from "metabase/entities/model-indexes";
+import { cleanIndexFlags } from "metabase/entities/model-indexes/actions";
 import Timelines from "metabase/entities/timelines";
 
 import { getAlerts } from "metabase/alert/selectors";
@@ -48,6 +48,7 @@ import { getIsPKFromTablePredicate } from "metabase-lib/v1/types/utils/isa";
 import { LOAD_COMPLETE_FAVICON } from "metabase/hoc/Favicon";
 import { isNotNull } from "metabase/lib/types";
 import { getQuestionWithDefaultVisualizationSettings } from "./actions/core/utils";
+import { createRawSeries, getWritableColumnProperties } from "./utils";
 
 export const getUiControls = state => state.qb.uiControls;
 export const getQueryStatus = state => state.qb.queryStatus;
@@ -110,8 +111,40 @@ export const getIsBookmarked = (state, props) =>
       bookmark.type === "card" && bookmark.item_id === state.qb.card?.id,
   );
 
+export const getQueryBuilderMode = createSelector(
+  [getUiControls],
+  uiControls => uiControls.queryBuilderMode,
+);
+
+const getCardResultMetadata = createSelector(
+  [getCard],
+  card => card?.result_metadata,
+);
+
+const getModelMetadataDiff = createSelector(
+  [getCardResultMetadata, getMetadataDiff, getQueryBuilderMode],
+  (resultMetadata, metadataDiff, queryBuilderMode) => {
+    if (!resultMetadata || queryBuilderMode !== "dataset") {
+      return metadataDiff;
+    }
+
+    return {
+      ...metadataDiff,
+      ...Object.fromEntries(
+        resultMetadata.map(column => [
+          column.name,
+          {
+            ...getWritableColumnProperties(column),
+            ...metadataDiff[column.name],
+          },
+        ]),
+      ),
+    };
+  },
+);
+
 export const getQueryResults = createSelector(
-  [getRawQueryResults, getMetadataDiff],
+  [getRawQueryResults, getModelMetadataDiff],
   (queryResults, metadataDiff) => {
     if (!Array.isArray(queryResults) || !queryResults.length) {
       return null;
@@ -307,11 +340,6 @@ const getNextRunParameterValues = createSelector([getParameters], parameters =>
 export const getNextRunParameters = createSelector(
   [getParameters],
   parameters => normalizeParameters(parameters),
-);
-
-export const getQueryBuilderMode = createSelector(
-  [getUiControls],
-  uiControls => uiControls.queryBuilderMode,
 );
 
 export const getPreviousQueryBuilderMode = createSelector(
@@ -685,32 +713,35 @@ export const getShouldShowUnsavedChangesWarning = createSelector(
  * Returns the card and query results data in a format that `Visualization.jsx` expects
  */
 export const getRawSeries = createSelector(
-  [getQuestion, getQueryResults, getLastRunDatasetQuery, getIsShowingRawTable],
-  (question, results, lastRunDatasetQuery, isShowingRawTable) => {
-    let display = question && question.display();
-    let settings = question && question.settings();
-
-    if (isShowingRawTable) {
-      display = "table";
-      settings = { "table.pivot": false };
-    }
-
-    // we want to provide the visualization with a card containing the latest
-    // "display", "visualization_settings", etc, (to ensure the correct visualization is shown)
-    // BUT the last executed "dataset_query" (to ensure data matches the query)
-    return (
-      results && [
+  [
+    getQuestion,
+    getFirstQueryResult,
+    getLastRunDatasetQuery,
+    getIsShowingRawTable,
+  ],
+  (question, queryResult, lastRunDatasetQuery, isShowingRawTable) => {
+    const rawSeries = createRawSeries({
+      question,
+      queryResult,
+      datasetQuery: lastRunDatasetQuery,
+    });
+    if (isShowingRawTable && rawSeries?.length > 0) {
+      const [{ card, data }] = rawSeries;
+      return [
         {
           card: {
-            ...question.card(),
-            display: display,
-            visualization_settings: settings,
-            dataset_query: lastRunDatasetQuery,
+            ...card,
+            display: "table",
+            visualization_settings: {
+              ...card.visualization_settings,
+              "table.pivot": false,
+            },
           },
-          data: results[0] && results[0].data,
+          data,
         },
-      ]
-    );
+      ];
+    }
+    return rawSeries;
   },
 );
 
@@ -1093,14 +1124,21 @@ export function getEmbeddedParameterVisibility(state, slug) {
 }
 
 export const getSubmittableQuestion = (state, question) => {
-  const series = getTransformedSeries(state);
+  const rawSeries = createRawSeries({
+    question: getQuestion(state),
+    queryResult: getFirstQueryResult(state),
+    datasetQuery: getLastRunDatasetQuery(state),
+  });
+
+  const series = rawSeries
+    ? getVisualizationTransformed(extractRemappings(rawSeries)).series
+    : null;
+
   const resultsMetadata = getResultsMetadata(state);
   const isResultDirty = getIsResultDirty(state);
 
   if (question.type() === "model" && resultsMetadata) {
-    resultsMetadata.columns = ModelIndexes.actions.cleanIndexFlags(
-      resultsMetadata.columns,
-    );
+    resultsMetadata.columns = cleanIndexFlags(resultsMetadata.columns);
   }
 
   let submittableQuestion = question;
